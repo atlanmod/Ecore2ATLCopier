@@ -1,3 +1,4 @@
+-- @atlcompiler emftvm
 -- @nsURI Ecore=http://www.eclipse.org/emf/2002/Ecore
 -- @nsURI ATL=http://www.eclipse.org/gmt/2005/ATL
 
@@ -17,7 +18,7 @@ helper context Ecore!EPackage def: allClasses() : Sequence(Ecore!EClass) =
 
 helper def: metamodel : Ecore!EPackage= Ecore!EPackage.allInstances()->asSequence()->first();
 
--- Creates an ATL transformation module from a KM3 metamodel.
+-- Creates an ATL transformation module from a Ecore metamodel.
 rule Metamodel {
 	from
 		s : Ecore!EPackage (s = thisModule.metamodel)
@@ -58,7 +59,7 @@ helper context Ecore!EClass def: sfs : Set(Ecore!EStructuralFeature) =
 				endif
 			endif
 		endif
-	);
+	).asSet();
 
 -- Creates a copy rule for each non-abstract class in the Ecore metamodel.
 rule Class {
@@ -108,8 +109,7 @@ rule Class {
 		),
 		ope : ATL!SimpleOutPatternElement (
 			varName <- 't',
-			type <- opet,
-			bindings <- s.sfs->collect(sf | Tuple{s = s, sf = sf})
+			type <- opet
 		),
 		opet : ATL!OclModelElement (
 			name <- s.name,
@@ -127,7 +127,8 @@ rule StructuralFeature {
 	to
 		b : ATL!Binding (
 			propertyName <- sf.name,
-			value <- v
+			value <- v,
+			outPatternElement <- thisModule.resolveTemp(s, 'ope')
 		),
 		v : ATL!NavigationOrAttributeCallExp (
 			name <- sf.name,
