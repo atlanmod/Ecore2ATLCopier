@@ -1,3 +1,4 @@
+-- @atlcompiler emftvm
 -- @nsURI Ecore=http://www.eclipse.org/emf/2002/Ecore
 -- @nsURI ATL=http://www.eclipse.org/gmt/2005/ATL
 
@@ -42,7 +43,7 @@ rule Metamodel {
 		)
 }
 
--- selecting features to keep
+-- Selects features to keep.
 helper context Ecore!EClass def: sfs : Set(Ecore!EStructuralFeature) =
 	self.eAllStructuralFeatures->select(e |
 		if e.oclIsKindOf(Ecore!EAttribute) then
@@ -117,7 +118,7 @@ rule Class {
 		)
 }
 
--- Now generating the bindings for each structural feature that needs
+-- Generates the bindings for each structural feature that needs
 -- to be initialized in the rule.
 rule StructuralFeature {
 	from
