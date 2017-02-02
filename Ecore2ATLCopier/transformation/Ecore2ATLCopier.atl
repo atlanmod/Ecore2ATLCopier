@@ -42,14 +42,9 @@ rule Metamodel {
 		)
 }
 
-helper context Ecore!EClass def: allStructuralFeatures : Set(Ecore!EStructuralFeature) =
-	self.eSuperTypes->iterate(e; acc : Set(Ecore!EStructuralFeature) = self.eStructuralFeatures |
-		acc->union(e.allStructuralFeatures)
-	);
-
 -- selecting features to keep
 helper context Ecore!EClass def: sfs : Set(Ecore!EStructuralFeature) =
-	self.allStructuralFeatures->select(e |
+	self.eAllStructuralFeatures->select(e |
 		if e.oclIsKindOf(Ecore!EAttribute) then
 			true
 		else	-- e.oclIsKindOf(Ecore!EReference)
@@ -127,7 +122,7 @@ rule Class {
 rule StructuralFeature {
 	from
 		s : Ecore!EClass, sf : Ecore!EStructuralFeature (
-s.allStructuralFeatures.includes(sf)
+			(not s.abstract) and s.sfs.includes(sf)
 		)
 	to
 		b : ATL!Binding (
