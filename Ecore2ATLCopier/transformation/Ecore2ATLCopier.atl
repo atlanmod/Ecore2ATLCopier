@@ -1,4 +1,6 @@
 -- @nsURI Ecore=http://www.eclipse.org/emf/2002/Ecore
+-- @nsURI ATL=http://www.eclipse.org/gmt/2005/ATL
+
 module Ecore2ATLCopier;
 create OUT : ATL from IN : Ecore;
 
@@ -40,37 +42,35 @@ rule Metamodel {
 		)
 }
 
-helper context Ecore!EClass def: allStructuralFeatures() : Set(Ecore!EStructuralFeature) =
+helper context Ecore!EClass def: allStructuralFeatures : Set(Ecore!EStructuralFeature) =
 	self.eSuperTypes->iterate(e; acc : Set(Ecore!EStructuralFeature) = self.eStructuralFeatures |
-		acc->union(e.allStructuralFeatures())
+		acc->union(e.allStructuralFeatures)
 	);
 
--- Creates a copy rule for each non-abstract class in the KM3 metamodel.
+-- selecting features to keep
+helper context Ecore!EClass def: sfs : Set(Ecore!EStructuralFeature) =
+	self.allStructuralFeatures->select(e |
+		if e.oclIsKindOf(Ecore!EAttribute) then
+			true
+		else	-- e.oclIsKindOf(Ecore!EReference)
+			if e.eOpposite.oclIsUndefined() then
+				true
+			else
+				if e.eOpposite.ordered then
+					false
+				else
+					true
+				endif
+			endif
+		endif
+	);
+
+-- Creates a copy rule for each non-abstract class in the Ecore metamodel.
 rule Class {
 	from
 		s : Ecore!EClass (
 			not s.abstract
 		)
-	using {
-		allSfs : Set(Ecore!EStructuralFeature) = s.allStructuralFeatures();
-		-- selecting features to keep
-		sfs : Set(Ecore!EStructuralFeature) =
-			allSfs->select(e |
-				if e.oclIsKindOf(Ecore!EAttribute) then
-					true
-				else	-- e.oclIsKindOf(KM3!Reference)
-					if e.eOpposite.oclIsUndefined() then
-						true
-					else
-						if e.eOpposite.ordered then
-							false
-						else
-							true
-						endif
-					endif
-				endif
-			);
-	}
 	to
 		t : ATL!MatchedRule (
 			isAbstract <- false,
@@ -114,25 +114,31 @@ rule Class {
 		ope : ATL!SimpleOutPatternElement (
 			varName <- 't',
 			type <- opet,
-			bindings <- b
+			bindings <- s.sfs->collect(sf | Tuple{s = s, sf = sf})
 		),
 		opet : ATL!OclModelElement (
 			name <- s.name,
 			model <- thisModule.metamodel
-		),
-
-		-- Now generating the bindings for each structural feature that needs
-		-- to be initialized in the rule.
-		b : distinct ATL!Binding foreach(sf in sfs) (
-			propertyName <- sf.name,
-			value <- v
-		),
-		v : distinct ATL!NavigationOrAttributeCallExp foreach(sf in sfs) (
-			name <- sf.name,
-			source <- src
-		),
-		src : distinct ATL!VariableExp foreach(sf in sfs) (
-			referredVariable <- ipe
 		)
 }
 
+-- Now generating the bindings for each structural feature that needs
+-- to be initialized in the rule.
+rule StructuralFeature {
+	from
+		s : Ecore!EClass, sf : Ecore!EStructuralFeature (
+s.allStructuralFeatures.includes(sf)
+		)
+	to
+		b : ATL!Binding (
+			propertyName <- sf.name,
+			value <- v
+		),
+		v : ATL!NavigationOrAttributeCallExp (
+			name <- sf.name,
+			source <- src
+		),
+		src : ATL!VariableExp (
+			referredVariable <- thisModule.resolveTemp(s, 'ipe')
+		)
+}
