@@ -1,0 +1,138 @@
+-- @nsURI Ecore=http://www.eclipse.org/emf/2002/Ecore
+module Ecore2ATLCopier;
+create OUT : ATL from IN : Ecore;
+
+helper context Ecore!EPackage def: allClasses() : Sequence(Ecore!EClass) =
+	self.eClassifiers->select(e |
+		e.oclIsKindOf(Ecore!EPackage)
+	)->iterate(e; acc : Sequence(Ecore!EClass) = self.eClassifiers->select(e |
+							e.oclIsKindOf(Ecore!EClass)
+						)->iterate(e; acc : Sequence(Ecore!EClass) = Sequence {} |
+							acc->including(e)
+						) |
+		acc->union(e.allClasses())
+	);
+
+helper def: metamodel : Ecore!EPackage= Ecore!EPackage.allInstances()->asSequence()->first();
+
+-- Creates an ATL transformation module from a KM3 metamodel.
+rule Metamodel {
+	from
+		s : Ecore!EPackage (s = thisModule.metamodel)
+	to
+		mm : ATL!OclModel (
+			name <- 'MM'
+		),
+		t : ATL!Module (
+			name <- 'Copy',
+			outModels <- Sequence {tm},
+			inModels <- Sequence {sm},
+			isRefining <- false,
+			elements <- s.allClasses()->select(e | not e.abstract)
+		),
+		sm : ATL!OclModel (
+			name <- 'IN',
+			metamodel <- mm
+		),
+		tm : ATL!OclModel (
+			name <- 'OUT',
+			metamodel <- mm
+		)
+}
+
+helper context Ecore!EClass def: allStructuralFeatures() : Set(Ecore!EStructuralFeature) =
+	self.eSuperTypes->iterate(e; acc : Set(Ecore!EStructuralFeature) = self.eStructuralFeatures |
+		acc->union(e.allStructuralFeatures())
+	);
+
+-- Creates a copy rule for each non-abstract class in the KM3 metamodel.
+rule Class {
+	from
+		s : Ecore!EClass (
+			not s.abstract
+		)
+	using {
+		allSfs : Set(Ecore!EStructuralFeature) = s.allStructuralFeatures();
+		-- selecting features to keep
+		sfs : Set(Ecore!EStructuralFeature) =
+			allSfs->select(e |
+				if e.oclIsKindOf(Ecore!EAttribute) then
+					true
+				else	-- e.oclIsKindOf(KM3!Reference)
+					if e.eOpposite.oclIsUndefined() then
+						true
+					else
+						if e.eOpposite.ordered then
+							false
+						else
+							true
+						endif
+					endif
+				endif
+			);
+	}
+	to
+		t : ATL!MatchedRule (
+			isAbstract <- false,
+			isRefining <- false,
+			name <- 'Copy' + s.name,
+			inPattern <- ip,
+			outPattern <- op
+		),
+
+		-- Creating the source pattern with a filter enforcing
+		-- that matched elements must have the class s for type.
+		ip : ATL!InPattern (
+			elements <- Sequence {ipe},
+			filter <- f
+		),
+		ipe : ATL!SimpleInPatternElement (
+			varName <- 's',
+			type <- ipet
+		),
+		ipet : ATL!OclModelElement (
+			name <- s.name,
+			model <- thisModule.metamodel
+		),
+		f : ATL!OperationCallExp (
+			operationName <- 'oclIsTypeOf',
+			source <- fv,
+			arguments <- Sequence {ft}
+		),
+		fv : ATL!VariableExp (
+			referredVariable <- ipe
+		),
+		ft : ATL!OclModelElement (
+			name <- s.name,
+			model <- thisModule.metamodel
+		),
+
+		-- Creating the target pattern.
+		op : ATL!OutPattern (
+			elements <- Sequence {ope}
+		),
+		ope : ATL!SimpleOutPatternElement (
+			varName <- 't',
+			type <- opet,
+			bindings <- b
+		),
+		opet : ATL!OclModelElement (
+			name <- s.name,
+			model <- thisModule.metamodel
+		),
+
+		-- Now generating the bindings for each structural feature that needs
+		-- to be initialized in the rule.
+		b : distinct ATL!Binding foreach(sf in sfs) (
+			propertyName <- sf.name,
+			value <- v
+		),
+		v : distinct ATL!NavigationOrAttributeCallExp foreach(sf in sfs) (
+			name <- sf.name,
+			source <- src
+		),
+		src : distinct ATL!VariableExp foreach(sf in sfs) (
+			referredVariable <- ipe
+		)
+}
+
